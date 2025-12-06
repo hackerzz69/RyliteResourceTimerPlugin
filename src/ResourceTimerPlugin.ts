@@ -14,10 +14,10 @@ export default class ResourceTimerPlugin extends Plugin {
     }
 
     private getRespawnMillis(entity: any) {
-        return entity?._def?._respawnTicks * 600; // 600ms tickrate
+        return Math.max(0, entity?._def?._respawnTicks - 1) * 600; // 600ms tickrate; using -1 from reported tickrate as this is what is seen in practise (??)
     }
 
-    private createPie(time: number, posX: number, posY: number): HTMLOrSVGElement {
+    private createPie(entityTypeId: number, time: number, posX: number, posY: number): HTMLOrSVGElement {
         const strokeWidth = this.radius / 8;
 
         const borderRadius = this.radius - strokeWidth / 2;
@@ -64,8 +64,12 @@ export default class ResourceTimerPlugin extends Plugin {
             const d = `M${cx},${cy} L${cx},${cy - wedgeRadius} A${wedgeRadius},${wedgeRadius} 0 ${largeArc} 0 ${x},${y} Z`;
             wedge.setAttribute("d", d);
 
-            if (progress < 1) requestAnimationFrame(tick);
-            else pie.remove();
+            if (progress < 1) {
+                requestAnimationFrame(tick);
+            } else {
+                pie.remove();
+                this.tracked.delete(entityTypeId);
+            }
         };
 
         requestAnimationFrame(tick);
@@ -98,10 +102,10 @@ export default class ResourceTimerPlugin extends Plugin {
         let n = worldEntityManager.getWorldEntityById(e[0]);
         let time = this.getRespawnMillis(n);
         
-        if (n._type && time) {
+        if (n?._type && time) {
             let pie: HTMLOrSVGElement | null = null;
             try {
-                pie = this.createPie(time, this.radius, this.radius);
+                pie = this.createPie(n._entityTypeId, time, this.radius, this.radius);
             } catch (error) {
                 this.log(error);
             }
@@ -117,7 +121,10 @@ export default class ResourceTimerPlugin extends Plugin {
         return px / 16;
     }
     private updateElementPosition(entity: any, domElement: any): void {
-        const entityMesh = entity._appearance._bjsMeshes[0];
+        const entityMesh = entity?._appearance?._bjsMeshes[0];
+        if (!entityMesh) {
+            this.tracked.delete(entity?._entityTypeId);
+        }
         const translationCoordinates = Vector3.Project(
             Vector3.ZeroReadOnly,
             entityMesh.getWorldMatrix(),
@@ -145,12 +152,12 @@ export default class ResourceTimerPlugin extends Plugin {
         const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
 
         for (const [entityTypeId, el] of this.tracked) {
-            if (!document.body.contains(el)) {
+            let entity = worldEntityManager.getWorldEntityById(entityTypeId);
+            if (!entity) {
+                el.remove();
                 this.tracked.delete(entityTypeId);
                 continue;
             }
-
-            let entity = worldEntityManager.getWorldEntityById(entityTypeId);
             this.updateElementPosition(entity, el);
         }
     }
