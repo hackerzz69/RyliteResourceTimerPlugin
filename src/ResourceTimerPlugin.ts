@@ -16,9 +16,9 @@ export enum EntityId {
 
 // Respawn time in seconds, keyed by entity ID - found on highspell.wiki
 export enum RespawnTimes {
-    Copper    = 6,
-    Tin       = 6,
-    Iron      = 6,
+    Copper    = 5.35,
+    Tin       = 5.35,
+    Iron      = 5.35,
     Coal      = 30,
     Silver    = 150,
     Palladium = 210,
@@ -27,13 +27,14 @@ export enum RespawnTimes {
     Caladium  = 1800
 }
 
-
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
     author: string = "Grandy";
-    radius: number = 24;
+    radius: number = 18;
     uiManager = new UIManager();
     timersContainer: HTMLDivElement | null = null;
+    tracked = new Map<any, SVGElement>();
+
 
     constructor() {
         super()
@@ -61,6 +62,7 @@ export default class ResourceTimerPlugin extends Plugin {
         pie.style.pointerEvents = "none";
         pie.style.left = posX - diameter / 2 + "px";
         pie.style.top = posY - diameter / 2 + "px";
+        pie.style.opacity = "0.7";
 
         // Orange border circle fully inside the SVG
         const border = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -135,7 +137,8 @@ export default class ResourceTimerPlugin extends Plugin {
                 // do nothing
             }
             if (pie) {
-                this.updateElementPosition(n._appearance._bjsMeshes[0], pie);
+                this.tracked.set(n._entityTypeId, pie as SVGElement);
+                this.updateElementPosition(n, pie);
             }
         }
     }
@@ -144,7 +147,8 @@ export default class ResourceTimerPlugin extends Plugin {
     private pxToRem(px: number): number {
         return px / 16;
     }
-    private updateElementPosition(entityMesh: any, domElement: any): void {
+    private updateElementPosition(entity: any, domElement: any): void {
+        const entityMesh = entity._appearance._bjsMeshes[0];
         const translationCoordinates = Vector3.Project(
             Vector3.ZeroReadOnly,
             entityMesh.getWorldMatrix(),
@@ -167,6 +171,25 @@ export default class ResourceTimerPlugin extends Plugin {
         this.log("Applying translation...");
         domElement.style.transform = `translate3d(calc(${this.pxToRem(translationCoordinates.x)}rem - 50%), calc(${this.pxToRem(translationCoordinates.y - 30)}rem - 50%), 0px)`;
     }
+
+    GameLoop_draw() {
+        if (this.tracked.size === 0) return;
+        const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
+
+        for (const [entityTypeId, el] of this.tracked) {
+
+            // If SVG removed itself, purge
+            if (!document.body.contains(el)) {
+                this.tracked.delete(entityTypeId);
+                continue;
+            }
+
+            // Find the world entity for this type
+            let entity = worldEntityManager.getWorldEntityById(entityTypeId);
+            this.updateElementPosition(entity, el);
+        }
+    }
+
 
     stop(): void {
         this.log(this.pluginName + " stopped");
