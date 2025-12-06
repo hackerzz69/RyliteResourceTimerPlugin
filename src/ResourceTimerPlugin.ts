@@ -1,31 +1,5 @@
-import {Plugin, UIManager, UIManagerScope} from "@ryelite/core";
+import { Plugin, UIManager, UIManagerScope } from "@ryelite/core";
 import { Vector3 } from '@babylonjs/core/Maths/math.js';
-
-// Unique numeric IDs for each entity of interest
-export enum EntityId {
-    Copper    = 25,
-    Tin       = 26,
-    Iron      = 24,
-    Coal      = 27,
-    Silver    = 34,
-    Palladium = 28,
-    Gold      = 35,
-    Coronium  = 29,
-    Caladium  = 133
-}
-
-// Respawn time in seconds, keyed by entity ID - found on highspell.wiki
-export enum RespawnTimes {
-    Copper    = 5.35,
-    Tin       = 5.35,
-    Iron      = 5.35,
-    Coal      = 30,
-    Silver    = 150,
-    Palladium = 210,
-    Gold      = 300,
-    Coronium  = 810,
-    Caladium  = 1800
-}
 
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
@@ -35,21 +9,19 @@ export default class ResourceTimerPlugin extends Plugin {
     timersContainer: HTMLDivElement | null = null;
     tracked = new Map<any, SVGElement>();
 
-
     constructor() {
         super()
     }
 
-    private getRespawnMillis(type: number) {
-        return RespawnTimes[EntityId[type] as keyof typeof RespawnTimes] * 1000;
+    private getRespawnMillis(entity: any) {
+        return entity?._def?._respawnTicks * 600; // 600ms tickrate
     }
 
     private createPie(time: number, posX: number, posY: number): HTMLOrSVGElement {
-        const strokeWidth = this.radius / 10;
+        const strokeWidth = this.radius / 8;
 
-        // Border thickness extends outward unless compensated for
-        const borderRadius = this.radius - strokeWidth / 2;      // stays inside
-        const wedgeRadius  = borderRadius - strokeWidth / 2;      // stays fully inside border
+        const borderRadius = this.radius - strokeWidth / 2;
+        const wedgeRadius  = borderRadius - strokeWidth / 2;
 
         const diameter = (this.radius * 2);
         const cx = diameter / 2;
@@ -64,7 +36,6 @@ export default class ResourceTimerPlugin extends Plugin {
         pie.style.top = posY - diameter / 2 + "px";
         pie.style.opacity = "0.7";
 
-        // Orange border circle fully inside the SVG
         const border = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         border.setAttribute("cx", cx.toString());
         border.setAttribute("cy", cy.toString());
@@ -74,7 +45,6 @@ export default class ResourceTimerPlugin extends Plugin {
         border.setAttribute("stroke-width", strokeWidth.toString());
         pie.appendChild(border);
 
-        // Yellow wedge inside the border
         const wedge = document.createElementNS("http://www.w3.org/2000/svg", "path");
         wedge.setAttribute("fill", "yellow");
         pie.appendChild(wedge);
@@ -120,21 +90,20 @@ export default class ResourceTimerPlugin extends Plugin {
             this.timersContainer.style.height =
                 'calc(100% - var(--titlebar-height))'; // Account for titlebar height
             this.timersContainer.style.top = 'var(--titlebar-height)'; // Position below titlebar
-            //this.radius = Math.floor(Math.random() * (100 - 20) + 20);
-            //this.createPie(Math.floor(Math.random() * (20 - 5) + 5) * 1000, this.radius, this.radius);
         }
     }
 
     SocketManager_handleEntityExhaustedResourcesPacket(e: any) {
         const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
         let n = worldEntityManager.getWorldEntityById(e[0]);
-        this.log(n);
-        if (n._type) {
+        let time = this.getRespawnMillis(n);
+        
+        if (n._type && time) {
             let pie: HTMLOrSVGElement | null = null;
             try {
-                pie = this.createPie(this.getRespawnMillis(n._type), this.radius, this.radius);
+                pie = this.createPie(time, this.radius, this.radius);
             } catch (error) {
-                // do nothing
+                this.log(error);
             }
             if (pie) {
                 this.tracked.set(n._entityTypeId, pie as SVGElement);
@@ -168,7 +137,6 @@ export default class ResourceTimerPlugin extends Plugin {
             return;
         }
 
-        this.log("Applying translation...");
         domElement.style.transform = `translate3d(calc(${this.pxToRem(translationCoordinates.x)}rem - 50%), calc(${this.pxToRem(translationCoordinates.y - 30)}rem - 50%), 0px)`;
     }
 
@@ -177,19 +145,15 @@ export default class ResourceTimerPlugin extends Plugin {
         const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
 
         for (const [entityTypeId, el] of this.tracked) {
-
-            // If SVG removed itself, purge
             if (!document.body.contains(el)) {
                 this.tracked.delete(entityTypeId);
                 continue;
             }
 
-            // Find the world entity for this type
             let entity = worldEntityManager.getWorldEntityById(entityTypeId);
             this.updateElementPosition(entity, el);
         }
     }
-
 
     stop(): void {
         this.log(this.pluginName + " stopped");
