@@ -1,16 +1,59 @@
-import { Plugin, UIManager, UIManagerScope } from "@ryelite/core";
+import { Plugin, SettingsTypes, UIManager, UIManagerScope } from "@ryelite/core";
 import { Vector3 } from '@babylonjs/core/Maths/math.js';
 
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
     author: string = "Grandy";
-    radius: number = 18;
     uiManager = new UIManager();
     timersContainer: HTMLDivElement | null = null;
     tracked = new Map<any, SVGElement>();
 
     constructor() {
-        super()
+        super();
+
+        this.settings.radius = {
+            text: 'Radius',
+            description: 'The radius of the timer circle',
+            type: SettingsTypes.range,
+            min: 0,
+            max: 100,
+            value: 18,
+            callback: () => {}
+        };
+
+        this.settings.borderRatio = {
+            text: 'Border ratio',
+            description: 'The ratio between circle radius and the width of the border. Bigger number = smaller border proportionally',
+            type: SettingsTypes.range,
+            min: 0,
+            max: 100,
+            value: 8,
+            callback: () => {}
+        };
+
+        this.settings.fillColor = {
+            text: 'Fill color',
+            type: SettingsTypes.color,
+            value: "#FFD800",
+            callback: () => {}
+        };
+
+        this.settings.borderColor = {
+            text: 'Border color',
+            type: SettingsTypes.color,
+            value: "#FF6A00",
+            callback: () => {}
+        };
+
+        this.settings.opacity = {
+            text: 'Opacity',
+            description: 'How transparent the timer is. 0 = transparent, 1 = opaque',
+            type: SettingsTypes.range,
+            min: 0,
+            max: 1,
+            value: 0.7,
+            callback: () => {}
+        };
     }
 
     private getRespawnMillis(entity: any) {
@@ -18,12 +61,13 @@ export default class ResourceTimerPlugin extends Plugin {
     }
 
     private createPie(entityTypeId: number, time: number, posX: number, posY: number): HTMLOrSVGElement {
-        const strokeWidth = this.radius / 8;
+        const radius = Number(this.settings.radius?.value);
+        const strokeWidth = radius / Number(this.settings.borderRatio?.value);
 
-        const borderRadius = this.radius - strokeWidth / 2;
+        const borderRadius = radius - strokeWidth / 2;
         const wedgeRadius  = borderRadius - strokeWidth / 2;
 
-        const diameter = (this.radius * 2);
+        const diameter = (radius * 2);
         const cx = diameter / 2;
         const cy = diameter / 2;
 
@@ -34,19 +78,19 @@ export default class ResourceTimerPlugin extends Plugin {
         pie.style.pointerEvents = "none";
         pie.style.left = posX - diameter / 2 + "px";
         pie.style.top = posY - diameter / 2 + "px";
-        pie.style.opacity = "0.7";
+        pie.style.opacity = this.settings.opacity.value?.toString();
 
         const border = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         border.setAttribute("cx", cx.toString());
         border.setAttribute("cy", cy.toString());
         border.setAttribute("r", borderRadius.toString());
         border.setAttribute("fill", "transparent");
-        border.setAttribute("stroke", "orange");
+        border.setAttribute("stroke", this.settings.borderColor.value?.toString());
         border.setAttribute("stroke-width", strokeWidth.toString());
         pie.appendChild(border);
 
         const wedge = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        wedge.setAttribute("fill", "yellow");
+        wedge.setAttribute("fill", this.settings.fillColor.value?.toString());
         pie.appendChild(wedge);
 
         const start = performance.now();
