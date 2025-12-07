@@ -13,7 +13,7 @@ class PositionedElement {
     }
 
     static createKey(name: string, id: number): string {
-        return name + id;
+        return name + "#" + id;
     }
 }
 
@@ -32,34 +32,27 @@ export default class OverlayTracker {
         matrix: Matrix
     ): void {
         let key = PositionedElement.createKey(name, id);
-        this.plugin.log(`OverlayTracker - adding ${key}`);
+        this.plugin.log(`OverlayTracker - adding ${key} / ${matrix.toString()}`);
         let item = new PositionedElement(key, element, matrix);
         this.items.push(item);
     }
 
-    private get(name: string, id: number): PositionedElement | null {
-        let index = this.indexOf(name, id);
-        if (index === -1) {
-            return null;
-        } else {
-            return this.items[index];
-        }
-    }
+    // private get(name: string, id: number): PositionedElement | null {
+    //     let index = this.indexOf(name, id);
+    //     if (index === -1) {
+    //         return null;
+    //     } else {
+    //         return this.items[index];
+    //     }
+    // }
 
-    setMatrix(name: string, id: number, matrix: Matrix): void {
-        let item = this.get(name, id);
-        if (item) {
-            item.matrix = matrix;
-        }
-    }
-
-    indexOf(name: string, id: number): number {
-        let key = PositionedElement.createKey(name, id);
+    indexOf(entityName: string, entityId: number): number {
+        let key = PositionedElement.createKey(entityName, entityId);
         return this.items.findIndex(i => i.key === key);
     }
 
-    remove(name: string, id: number): boolean {
-        const index = this.indexOf(name, id);
+    remove(entityName: string, entityId: number): boolean {
+        const index = this.indexOf(entityName, entityId);
         if (index === -1) {
             return false;
         };

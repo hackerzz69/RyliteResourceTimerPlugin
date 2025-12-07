@@ -1,6 +1,6 @@
 import { Plugin, SettingsTypes, UIManager, UIManagerScope } from "@ryelite/core";
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.js';
-import { Mesh } from "@babylonjs/core";
+import { Mesh, Nullable, Vector4 } from "@babylonjs/core";
 import createPie from './Pie';
 import createTimer from './RespawnTimer';
 import NPCRespawnTracker from './NPCRespawnTracker'
@@ -134,19 +134,22 @@ export default class ResourceTimerPlugin extends Plugin {
             let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
             if (entity && health === 0) {
-                this.log("Entity died:");
-                this.log(entity);
-                let respawnInfo = this.respawnTracker.handleDeath(entityId);
-                if (respawnInfo && respawnInfo.isComplete()) {
+                let respawnTime = (entity?._def?._combat?._respawnLength * 600) + 1200; // 600ms ticks, 2 tick before despawn
+                this.log(`Entity '${name}' #${entityId} died (${respawnTime}ms respawn):`);
+                //this.log(entity);
+                this.log(entity?._appearance?._billboardMesh?.getWorldMatrix().toString())
+                let matrix = this.respawnTracker.handleDeath(entityId);
+                if (matrix) {
                     let timer: HTMLElement;
                     try {
-                        timer = createTimer(this.settings, respawnInfo.respawnDuration!, () => this.overlayTracker.remove(name, entityId));
+                        timer = createTimer(this.settings, respawnTime, () => this.overlayTracker.remove(name, entityId));
                     } catch (error) {
-                        this.error(error);
+                        this.log(error);
                         return;
                     }
+                    this.log("Adding to container");
                     this.timersContainer?.appendChild(timer);
-                    this.overlayTracker.add(name, entityId, timer, respawnInfo.matrix!);
+                    this.overlayTracker.add(name, entityId, timer, matrix);
                 }
             }
         }
@@ -154,25 +157,38 @@ export default class ResourceTimerPlugin extends Plugin {
 
     SocketManager_handleNPCEnteredChunkPacket(e: any) {
         const entityManager = this.gameHooks?.EntityManager?.Instance;
-        let entityID = e[0];
+        let entityId = e[0];
         setTimeout(() => {
-            let entity = entityManager.getNPCByEntityId(entityID);
+            let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
-            let id = entity._entityId;
 
             this.log("NPC entered chunk:")
             this.log(entity);
 
             let billboardMesh: Mesh = entity?._appearance?._billboardMesh;
             if (!billboardMesh) {
-                this.error(`No mesh found for '${name+id}'`);
+                this.error(`No mesh found for '${name+entityId}'`);
                 return;
             }
-            let matrixCopy: Matrix = Matrix.Zero();
-            matrixCopy.copyFrom(billboardMesh.getWorldMatrix());
+            let matrixCopy: Matrix = billboardMesh.getWorldMatrix().clone(); //this.copyMatrix(billboardMesh.getWorldMatrix());
             this.log(matrixCopy.toString());
-            this.respawnTracker.handleRespawn(entityID, billboardMesh.getWorldMatrix());
-        }, 10);
+            this.respawnTracker.handleRespawn(entityId, matrixCopy);
+        }, 50);
+    }
+
+    private copyMatrix(original: Matrix) : Matrix {
+        let copy: Matrix = Matrix.Zero();
+        let row1: Nullable<Vector4> = original.getRow(0);
+        let row2: Nullable<Vector4> = original.getRow(1);
+        let row3: Nullable<Vector4> = original.getRow(2);
+        let row4: Nullable<Vector4> = original.getRow(3);
+        // copy.set(
+        //     new Number(row1!._x), Number(row1!._y, Number(row1!._z, Number(row1!._w,
+        //     Number(row2!._x, Number(row2!._y, Number(row2!._z, Number(row2!._w,
+        //     Number(row3!._x, Number(row3!._y, Number(row3!._z, Number(row3!._w,
+        //     Number(row4!._x, Number(row4!._y, Number(row4!._z, Number(row4!._w,
+        // );
+        return copy;
     }
 
     // Borrowed from Nameplates - https://github.com/RyeL1te/Plugins/blob/main/Nameplates/src/Nameplates.ts#L1286
