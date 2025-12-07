@@ -134,23 +134,24 @@ export default class ResourceTimerPlugin extends Plugin {
             let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
             if (entity && health === 0) {
-                let respawnTime = (entity?._def?._combat?._respawnLength * 600) + 1200; // 600ms ticks, 2 tick before despawn
-                this.log(`Entity '${name}' #${entityId} died (${respawnTime}ms respawn):`);
-                //this.log(entity);
-                this.log(entity?._appearance?._billboardMesh?.getWorldMatrix().toString())
-                let matrix = this.respawnTracker.handleDeath(entityId);
-                if (matrix) {
-                    let timer: HTMLElement;
-                    try {
-                        timer = createTimer(this.settings, respawnTime, () => this.overlayTracker.remove(name, entityId));
-                    } catch (error) {
-                        this.log(error);
-                        return;
+                setTimeout(() => {
+                    let respawnTime = (entity?._def?._combat?._respawnLength * 600); // 600ms ticks
+                    //this.log(`Entity '${name}' #${entityId} died (${respawnTime}ms respawn):`);
+                    //this.log(entity);
+                    //this.log(entity?._appearance?._billboardMesh?.getWorldMatrix().toString())
+                    let matrix = this.respawnTracker.handleDeath(entityId);
+                    if (matrix) {
+                        let timer: HTMLElement;
+                        try {
+                            timer = createTimer(this.settings, respawnTime, () => this.overlayTracker.remove(name, entityId));
+                        } catch (error) {
+                            this.log(error);
+                            return;
+                        }
+                        this.timersContainer?.appendChild(timer);
+                        this.overlayTracker.add(name, entityId, timer, matrix);
                     }
-                    this.log("Adding to container");
-                    this.timersContainer?.appendChild(timer);
-                    this.overlayTracker.add(name, entityId, timer, matrix);
-                }
+                }, 1200); // 2x600ms ticks before despawn
             }
         }
     }
@@ -162,33 +163,18 @@ export default class ResourceTimerPlugin extends Plugin {
             let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
 
-            this.log("NPC entered chunk:")
-            this.log(entity);
+            //this.log("NPC entered chunk:")
+            //this.log(entity);
 
             let billboardMesh: Mesh = entity?._appearance?._billboardMesh;
             if (!billboardMesh) {
                 this.error(`No mesh found for '${name+entityId}'`);
                 return;
             }
-            let matrixCopy: Matrix = billboardMesh.getWorldMatrix().clone(); //this.copyMatrix(billboardMesh.getWorldMatrix());
-            this.log(matrixCopy.toString());
+            let matrixCopy: Matrix = billboardMesh.getWorldMatrix().clone();
+            //this.log(matrixCopy.toString());
             this.respawnTracker.handleRespawn(entityId, matrixCopy);
         }, 50);
-    }
-
-    private copyMatrix(original: Matrix) : Matrix {
-        let copy: Matrix = Matrix.Zero();
-        let row1: Nullable<Vector4> = original.getRow(0);
-        let row2: Nullable<Vector4> = original.getRow(1);
-        let row3: Nullable<Vector4> = original.getRow(2);
-        let row4: Nullable<Vector4> = original.getRow(3);
-        // copy.set(
-        //     new Number(row1!._x), Number(row1!._y, Number(row1!._z, Number(row1!._w,
-        //     Number(row2!._x, Number(row2!._y, Number(row2!._z, Number(row2!._w,
-        //     Number(row3!._x, Number(row3!._y, Number(row3!._z, Number(row3!._w,
-        //     Number(row4!._x, Number(row4!._y, Number(row4!._z, Number(row4!._w,
-        // );
-        return copy;
     }
 
     // Borrowed from Nameplates - https://github.com/RyeL1te/Plugins/blob/main/Nameplates/src/Nameplates.ts#L1286
