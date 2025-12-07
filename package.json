@@ -1,5 +1,5 @@
 {
-  "name": "ExamplePlugin",
+  "name": "ResourceTimerPlugin",
   "packageManager": "yarn@4.9.1",
   "engines": {
     "node": ">=22.0.0"
@@ -7,12 +7,14 @@
   "scripts": {
     "build": "node build.mjs"
   },
-  "main": "src/ExamplePlugin.ts",
+  "main": "src/ResourceTimerPlugin.ts",
   "devDependencies": {
     "esbuild": "^0.25.8",
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@ryelite/core": "^0.1.0"
+    "@babylonjs/core": "^8.18.0",
+    "@ryelite/core": "^0.1.0",
+    "yarn": "^1.22.22"
   }
 }
