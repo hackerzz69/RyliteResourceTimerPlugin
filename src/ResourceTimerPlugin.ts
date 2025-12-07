@@ -1,12 +1,18 @@
 import { Plugin, SettingsTypes, UIManager, UIManagerScope } from "@ryelite/core";
-import { Vector3 } from '@babylonjs/core/Maths/math.js';
+import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.js';
+import createPie from './Pie';
+import createTimer from './RespawnTimer';
+import NPCRespawnTracker from './NPCRespawnTracker'
+import { Mesh } from "@babylonjs/core";
 
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
     author: string = "Grandy";
     uiManager = new UIManager();
     timersContainer: HTMLDivElement | null = null;
-    tracked = new Map<any, SVGElement>();
+    timer3DByEntityId = new Map<any, SVGElement>();
+    timer2DByEntityId = new Map<any, HTMLElement>();
+    respawnTracker = new NPCRespawnTracker(this);
 
     constructor() {
         super();
@@ -32,7 +38,7 @@ export default class ResourceTimerPlugin extends Plugin {
         };
 
         this.settings.fillColor = {
-            text: 'Fill color',
+            text: 'Timer/pie color',
             type: SettingsTypes.color,
             value: "#FFD800",
             callback: () => {}
@@ -47,78 +53,26 @@ export default class ResourceTimerPlugin extends Plugin {
 
         this.settings.opacity = {
             text: 'Opacity',
-            description: 'How transparent the timer is. 0 = transparent, 1 = opaque',
+            description: 'How transparent the timers are. 0 = transparent, 1 = opaque',
             type: SettingsTypes.range,
             min: 0,
             max: 1,
             value: 0.7,
             callback: () => {}
         };
+
+        this.settings.respawnTimerFontSize = {
+            text: 'Respawn timer font size',
+            type: SettingsTypes.range,
+            min: 0,
+            max: 100,
+            value: 14,
+            callback: () => {}
+        };
     }
 
     private getRespawnMillis(entity: any) {
         return Math.max(0, entity?._def?._respawnTicks - 1) * 600; // 600ms tickrate; using -1 from reported tickrate as this is what is seen in practise (??)
-    }
-
-    private createPie(entityTypeId: number, time: number, posX: number, posY: number): HTMLOrSVGElement {
-        const radius = Number(this.settings.radius?.value);
-        const strokeWidth = radius / Number(this.settings.borderRatio?.value);
-
-        const borderRadius = radius - strokeWidth / 2;
-        const wedgeRadius  = borderRadius - strokeWidth / 2;
-
-        const diameter = (radius * 2);
-        const cx = diameter / 2;
-        const cy = diameter / 2;
-
-        const pie = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        pie.setAttribute("width", diameter.toString());
-        pie.setAttribute("height", diameter.toString());
-        pie.style.position = "absolute";
-        pie.style.pointerEvents = "none";
-        pie.style.left = posX - diameter / 2 + "px";
-        pie.style.top = posY - diameter / 2 + "px";
-        pie.style.opacity = this.settings.opacity.value?.toString();
-
-        const border = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        border.setAttribute("cx", cx.toString());
-        border.setAttribute("cy", cy.toString());
-        border.setAttribute("r", borderRadius.toString());
-        border.setAttribute("fill", "transparent");
-        border.setAttribute("stroke", this.settings.borderColor.value?.toString());
-        border.setAttribute("stroke-width", strokeWidth.toString());
-        pie.appendChild(border);
-
-        const wedge = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        wedge.setAttribute("fill", this.settings.fillColor.value?.toString());
-        pie.appendChild(wedge);
-
-        const start = performance.now();
-
-        const tick = (now: number) => {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / time, 1);
-
-            const angle = -progress * 2 * Math.PI;
-            const x = cx + wedgeRadius * Math.sin(angle);
-            const y = cy - wedgeRadius * Math.cos(angle);
-            const largeArc = progress > 0.5 ? 1 : 0;
-
-            // Start from inner top point (noon), expand anti-clockwise
-            const d = `M${cx},${cy} L${cx},${cy - wedgeRadius} A${wedgeRadius},${wedgeRadius} 0 ${largeArc} 0 ${x},${y} Z`;
-            wedge.setAttribute("d", d);
-
-            if (progress < 1) {
-                requestAnimationFrame(tick);
-            } else {
-                pie.remove();
-                this.tracked.delete(entityTypeId);
-            }
-        };
-
-        requestAnimationFrame(tick);
-        this.timersContainer?.appendChild(pie);
-        return pie;
     }
 
     init(): void {
@@ -141,68 +95,131 @@ export default class ResourceTimerPlugin extends Plugin {
         }
     }
 
+    private removeEntityFrom3DTracked = (entityTypeId: any) => {
+        this.timer3DByEntityId.delete(entityTypeId);
+    }
+
+    private removeEntityFrom2DTracked = (entityID: any) => {
+        this.timer2DByEntityId.delete(entityID);
+    }
+
     SocketManager_handleEntityExhaustedResourcesPacket(e: any) {
         const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
         let n = worldEntityManager.getWorldEntityById(e[0]);
         let time = this.getRespawnMillis(n);
         
         if (n?._type && time) {
-            let pie: HTMLOrSVGElement | null = null;
+            let pie: SVGElement | null = null;
             try {
-                pie = this.createPie(n._entityTypeId, time, this.radius, this.radius);
+                pie = createPie(this.settings, n._entityTypeId, time, this.radius, this.radius, this.removeEntityFrom3DTracked);
+                this.timersContainer?.appendChild(pie);
             } catch (error) {
                 this.log(error);
             }
             if (pie) {
-                this.tracked.set(n._entityTypeId, pie as SVGElement);
-                this.updateElementPosition(n, pie);
+                this.timer3DByEntityId.set(n._entityTypeId, pie as SVGElement);
+                this.updateElementFromMesh(n, pie);
             }
         }
+    }
+
+    SocketManager_handleHitpointsCurrentLevelChangedPacket(e: any) {
+        const entityManager = this.gameHooks?.EntityManager?.Instance;
+        this.log(e);
+        // entityType (NPC/Player), entityID, health
+        let [ entityType, entityID, health ] = e;
+        if (entityType === 2) { // NPC
+            let entity = entityManager.getNPCByEntityId(entityID);
+            this.log(entity);
+            if (entity && health === 0) {
+                let respawnInfo = this.respawnTracker.handleDeath(entityID);
+                if (respawnInfo && respawnInfo.isComplete()) {
+                    let timer = createTimer(this.settings, entityID, respawnInfo.respawnDuration!, this.removeEntityFrom2DTracked);
+                    this.timersContainer?.appendChild(timer);
+                    this.timer2DByEntityId.set(entityID, timer);
+                }
+            }
+        }
+    }
+
+    SocketManager_handleNPCEnteredChunkPacket(e: any) {
+        const entityManager = this.gameHooks?.EntityManager?.Instance;
+        let entityID = e[0];
+        let entity = entityManager.getNPCByEntityId(entityID);
+        this.log(entity);
+        this.respawnTracker.handleRespawn(entityID, entity._currentGamePosition);
     }
 
     // Borrowed from Nameplates - https://github.com/RyeL1te/Plugins/blob/main/Nameplates/src/Nameplates.ts#L1286
     private pxToRem(px: number): number {
         return px / 16;
     }
-    private updateElementPosition(entity: any, domElement: any): void {
-        const entityMesh = entity?._appearance?._bjsMeshes[0];
+    private updateElementFromMesh(entity: any, domElement: any): void {
+        let entityMesh = entity?._appearance?._bjsMeshes[0];
         if (!entityMesh) {
-            this.tracked.delete(entity?._entityTypeId);
+            this.timer3DByEntityId.delete(entity?._entityTypeId);
+        } else {
+            this.updateElementPosition(entity, entityMesh, domElement);
         }
+    }
+    private updateElementFromBillboard(entity: any, domElement: any) {
+        let mesh: Mesh = entity?._appearance?._billboardMesh;
+        if (!mesh) {
+            this.log(`No billboard`);
+            this.timer2DByEntityId.delete(entity?._entityId);
+        } else {
+            this.log(`updateFromBillboard`);
+            this.updateElementPosition(entity, mesh, domElement);
+        }
+    }
+    private updateElementPosition(entity: any, mesh: Mesh, domElement: any): void {
         const translationCoordinates = Vector3.Project(
             Vector3.ZeroReadOnly,
-            entityMesh.getWorldMatrix(),
+            mesh.getWorldMatrix(),
             this.gameHooks.GameEngine.Instance.Scene.getTransformMatrix(),
             this.gameHooks.GameCameraManager.Camera.viewport.toGlobal(
                 this.gameHooks.GameEngine.Instance.Engine.getRenderWidth(1),
                 this.gameHooks.GameEngine.Instance.Engine.getRenderHeight(1)
             )
         );
-
-        const camera = this.gameHooks.GameCameraManager.Camera;
-        const isInFrustrum = camera.isInFrustum(entityMesh);
-
-        // Apply frustum culling first - if not in frustum, hide regardless of stack limits
-        if (!isInFrustrum) {
-            domElement.style.visibility = 'hidden';
-            return;
-        }
+        // const camera = this.gameHooks.GameCameraManager.Camera;
+        // // Apply frustum culling first - if not in frustum, hide regardless of stack limits
+        // if (!camera.isInFrustrum(mesh)) {
+        //     domElement.style.visibility = 'hidden';
+        //     return;
+        // }
+        this.log(`Translation coords: ${translationCoordinates}`);
 
         domElement.style.transform = `translate3d(calc(${this.pxToRem(translationCoordinates.x)}rem - 50%), calc(${this.pxToRem(translationCoordinates.y - 30)}rem - 50%), 0px)`;
     }
 
     GameLoop_draw() {
-        if (this.tracked.size === 0) return;
-        const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
+        if (this.timer3DByEntityId.size !== 0) {
+            const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
 
-        for (const [entityTypeId, el] of this.tracked) {
-            let entity = worldEntityManager.getWorldEntityById(entityTypeId);
-            if (!entity) {
-                el.remove();
-                this.tracked.delete(entityTypeId);
-                continue;
+            for (const [entityTypeId, el] of this.timer3DByEntityId) {
+                let entity = worldEntityManager.getWorldEntityById(entityTypeId);
+                if (!entity) {
+                    // mesh is gone when the npc is fully dead, so need to cache
+                    el.remove();
+                    this.timer3DByEntityId.delete(entityTypeId);
+                    continue;
+                }
+                this.updateElementFromMesh(entity, el);
             }
-            this.updateElementPosition(entity, el);
+        }
+
+        if (this.timer2DByEntityId.size !== 0) {
+            const entityManager = this.gameHooks?.EntityManager?.Instance;
+            for (const [entityID, el] of this.timer2DByEntityId) {
+                let entity = entityManager.getNPCByEntityId(entityID);
+                if (!entity) {
+                    el.remove();
+                    this.timer2DByEntityId.delete(entityID);
+                    continue;
+                }
+                this.updateElementFromBillboard(entity, el);
+            }
         }
     }
 
