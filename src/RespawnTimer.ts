@@ -1,10 +1,10 @@
-export default function createTimer(settings: any, entityId: number, durationMillis: number, onEndCallback: Function): HTMLElement {
+export default function createTimer(settings: any, durationMillis: number, onEndCallback: Function): HTMLElement {
         const start = Date.now();
         const end = start + durationMillis;
 
         const container = document.createElement("div");
         container.style.borderRadius = "100%";
-        container.style.border = "2px solid " + settings?.borderColor?.value?.toString();
+        container.style.border = "1px solid " + settings?.borderColor?.value?.toString();
         container.style.position = "absolute";
         container.style.minWidth = "0";
         container.style.display = "flex";
@@ -13,6 +13,7 @@ export default function createTimer(settings: any, entityId: number, durationMil
         container.style.color = settings?.fillColor?.value?.toString();
         container.style.fontSize = settings?.respawnTimerFontSize?.value?.toString();
         container.style.fontFamily = "Courier New, Inter";
+        container.style.fontWeight = "bold";
         container.style.aspectRatio = "1 / 1";
         container.style.padding = "6px";
 
@@ -28,7 +29,7 @@ export default function createTimer(settings: any, entityId: number, durationMil
                 requestAnimationFrame(tick);
             } else {
                 container.remove();
-                onEndCallback(entityId);
+                onEndCallback();
             }
         };
 

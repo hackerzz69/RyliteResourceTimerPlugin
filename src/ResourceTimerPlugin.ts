@@ -1,18 +1,18 @@
 import { Plugin, SettingsTypes, UIManager, UIManagerScope } from "@ryelite/core";
 import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.js';
+import { Mesh } from "@babylonjs/core";
 import createPie from './Pie';
 import createTimer from './RespawnTimer';
 import NPCRespawnTracker from './NPCRespawnTracker'
-import { Mesh } from "@babylonjs/core";
+import OverlayTracker from "./OverlayTracker";
 
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
     author: string = "Grandy";
     uiManager = new UIManager();
     timersContainer: HTMLDivElement | null = null;
-    timer3DByEntityId = new Map<any, SVGElement>();
-    timer2DByEntityId = new Map<any, HTMLElement>();
     respawnTracker = new NPCRespawnTracker(this);
+    overlayTracker = new OverlayTracker(this);
 
     constructor() {
         super();
@@ -95,48 +95,58 @@ export default class ResourceTimerPlugin extends Plugin {
         }
     }
 
-    private removeEntityFrom3DTracked = (entityTypeId: any) => {
-        this.timer3DByEntityId.delete(entityTypeId);
-    }
-
-    private removeEntityFrom2DTracked = (entityID: any) => {
-        this.timer2DByEntityId.delete(entityID);
-    }
-
     SocketManager_handleEntityExhaustedResourcesPacket(e: any) {
         const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
-        let n = worldEntityManager.getWorldEntityById(e[0]);
-        let time = this.getRespawnMillis(n);
+        let worldEntity = worldEntityManager.getWorldEntityById(e[0]);
+        let respawnTime = this.getRespawnMillis(worldEntity);
         
-        if (n?._type && time) {
-            let pie: SVGElement | null = null;
+        if (worldEntity?._type && respawnTime) {
+            //this.log(`Resource exhausted:`);
+            //this.log(worldEntity);
+
+            let name = worldEntity._name;
+            let id = worldEntity._entityTypeId;
+            let entityMesh = worldEntity?._appearance?._bjsMeshes[0];
+            
+            if (!entityMesh) {
+                this.error(`No mesh found for '${name+id}'; not adding overlay`);
+                return;
+            }
+
+            let pie: SVGElement;
             try {
-                pie = createPie(this.settings, n._entityTypeId, time, this.radius, this.radius, this.removeEntityFrom3DTracked);
+                pie = createPie(this.settings, respawnTime, () => this.overlayTracker.remove(name, id));
                 this.timersContainer?.appendChild(pie);
             } catch (error) {
-                this.log(error);
+                this.error(error);
+                return;
             }
-            if (pie) {
-                this.timer3DByEntityId.set(n._entityTypeId, pie as SVGElement);
-                this.updateElementFromMesh(n, pie);
-            }
+            
+            this.overlayTracker.add(name, id, pie, entityMesh.getWorldMatrix());
         }
     }
 
     SocketManager_handleHitpointsCurrentLevelChangedPacket(e: any) {
         const entityManager = this.gameHooks?.EntityManager?.Instance;
-        this.log(e);
         // entityType (NPC/Player), entityID, health
-        let [ entityType, entityID, health ] = e;
+        let [ entityType, entityId, health ] = e;
         if (entityType === 2) { // NPC
-            let entity = entityManager.getNPCByEntityId(entityID);
-            this.log(entity);
+            let entity = entityManager.getNPCByEntityId(entityId);
+            let name = entity._name;
             if (entity && health === 0) {
-                let respawnInfo = this.respawnTracker.handleDeath(entityID);
+                this.log("Entity died:");
+                this.log(entity);
+                let respawnInfo = this.respawnTracker.handleDeath(entityId);
                 if (respawnInfo && respawnInfo.isComplete()) {
-                    let timer = createTimer(this.settings, entityID, respawnInfo.respawnDuration!, this.removeEntityFrom2DTracked);
+                    let timer: HTMLElement;
+                    try {
+                        timer = createTimer(this.settings, respawnInfo.respawnDuration!, () => this.overlayTracker.remove(name, entityId));
+                    } catch (error) {
+                        this.error(error);
+                        return;
+                    }
                     this.timersContainer?.appendChild(timer);
-                    this.timer2DByEntityId.set(entityID, timer);
+                    this.overlayTracker.add(name, entityId, timer, respawnInfo.matrix!);
                 }
             }
         }
@@ -145,82 +155,53 @@ export default class ResourceTimerPlugin extends Plugin {
     SocketManager_handleNPCEnteredChunkPacket(e: any) {
         const entityManager = this.gameHooks?.EntityManager?.Instance;
         let entityID = e[0];
-        let entity = entityManager.getNPCByEntityId(entityID);
-        this.log(entity);
-        this.respawnTracker.handleRespawn(entityID, entity._currentGamePosition);
+        setTimeout(() => {
+            let entity = entityManager.getNPCByEntityId(entityID);
+            let name = entity._name;
+            let id = entity._entityId;
+
+            this.log("NPC entered chunk:")
+            this.log(entity);
+
+            let billboardMesh: Mesh = entity?._appearance?._billboardMesh;
+            if (!billboardMesh) {
+                this.error(`No mesh found for '${name+id}'`);
+                return;
+            }
+            let matrixCopy: Matrix = Matrix.Zero();
+            matrixCopy.copyFrom(billboardMesh.getWorldMatrix());
+            this.log(matrixCopy.toString());
+            this.respawnTracker.handleRespawn(entityID, billboardMesh.getWorldMatrix());
+        }, 10);
     }
 
     // Borrowed from Nameplates - https://github.com/RyeL1te/Plugins/blob/main/Nameplates/src/Nameplates.ts#L1286
     private pxToRem(px: number): number {
         return px / 16;
     }
-    private updateElementFromMesh(entity: any, domElement: any): void {
-        let entityMesh = entity?._appearance?._bjsMeshes[0];
-        if (!entityMesh) {
-            this.timer3DByEntityId.delete(entity?._entityTypeId);
-        } else {
-            this.updateElementPosition(entity, entityMesh, domElement);
-        }
-    }
-    private updateElementFromBillboard(entity: any, domElement: any) {
-        let mesh: Mesh = entity?._appearance?._billboardMesh;
-        if (!mesh) {
-            this.log(`No billboard`);
-            this.timer2DByEntityId.delete(entity?._entityId);
-        } else {
-            this.log(`updateFromBillboard`);
-            this.updateElementPosition(entity, mesh, domElement);
-        }
-    }
-    private updateElementPosition(entity: any, mesh: Mesh, domElement: any): void {
+    
+    private updateElementPosition(matrix: Matrix, domElement: any): void {
         const translationCoordinates = Vector3.Project(
             Vector3.ZeroReadOnly,
-            mesh.getWorldMatrix(),
+            matrix,
             this.gameHooks.GameEngine.Instance.Scene.getTransformMatrix(),
             this.gameHooks.GameCameraManager.Camera.viewport.toGlobal(
                 this.gameHooks.GameEngine.Instance.Engine.getRenderWidth(1),
                 this.gameHooks.GameEngine.Instance.Engine.getRenderHeight(1)
             )
         );
-        // const camera = this.gameHooks.GameCameraManager.Camera;
-        // // Apply frustum culling first - if not in frustum, hide regardless of stack limits
-        // if (!camera.isInFrustrum(mesh)) {
-        //     domElement.style.visibility = 'hidden';
-        //     return;
-        // }
-        this.log(`Translation coords: ${translationCoordinates}`);
 
         domElement.style.transform = `translate3d(calc(${this.pxToRem(translationCoordinates.x)}rem - 50%), calc(${this.pxToRem(translationCoordinates.y - 30)}rem - 50%), 0px)`;
     }
 
     GameLoop_draw() {
-        if (this.timer3DByEntityId.size !== 0) {
-            const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
+        if (this.overlayTracker.isEmpty()) return;
 
-            for (const [entityTypeId, el] of this.timer3DByEntityId) {
-                let entity = worldEntityManager.getWorldEntityById(entityTypeId);
-                if (!entity) {
-                    // mesh is gone when the npc is fully dead, so need to cache
-                    el.remove();
-                    this.timer3DByEntityId.delete(entityTypeId);
-                    continue;
-                }
-                this.updateElementFromMesh(entity, el);
+        this.overlayTracker.forEach((item) => {
+            if (item.matrix) {
+                this.updateElementPosition(item.matrix, item.element);
             }
-        }
-
-        if (this.timer2DByEntityId.size !== 0) {
-            const entityManager = this.gameHooks?.EntityManager?.Instance;
-            for (const [entityID, el] of this.timer2DByEntityId) {
-                let entity = entityManager.getNPCByEntityId(entityID);
-                if (!entity) {
-                    el.remove();
-                    this.timer2DByEntityId.delete(entityID);
-                    continue;
-                }
-                this.updateElementFromBillboard(entity, el);
-            }
-        }
+        });
     }
 
     stop(): void {

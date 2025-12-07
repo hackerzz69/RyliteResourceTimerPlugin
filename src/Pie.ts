@@ -1,4 +1,4 @@
-export default function createPie(settings: any, entityTypeId: number, time: number, posX: number, posY: number, onEndCallback: Function): SVGElement {
+export default function createPie(settings: any, time: number, onEndCallback: Function): SVGElement {
         const radius = Number(settings.radius?.value);
         const strokeWidth = radius / Number(settings.borderRatio?.value);
 
@@ -14,8 +14,6 @@ export default function createPie(settings: any, entityTypeId: number, time: num
         pie.setAttribute("height", diameter.toString());
         pie.style.position = "absolute";
         pie.style.pointerEvents = "none";
-        pie.style.left = posX - diameter / 2 + "px";
-        pie.style.top = posY - diameter / 2 + "px";
         pie.style.opacity = settings.opacity.value?.toString();
 
         const border = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -50,7 +48,7 @@ export default function createPie(settings: any, entityTypeId: number, time: num
                 requestAnimationFrame(tick);
             } else {
                 pie.remove();
-                onEndCallback(entityTypeId);
+                onEndCallback();
             }
         };
 
