@@ -1,34 +1,37 @@
 import { Matrix } from "@babylonjs/core";
 import { Plugin } from "@ryelite/core";
 
-type SerializedMatrix = number[];
-
-type PersistedData = Record<number, SerializedMatrix>;
+const DATA_KEY = "entityIdToLocation";
 
 export default class NPCRespawnTracker {
     private entityIdList = new Set<number>();
-    private entityIdToLocation: Map<number, Matrix>;
+    private entityIdToLocation = new Map<number, Matrix>();
     private plugin: Plugin;
 
     constructor(plugin: Plugin) {
         this.plugin = plugin;
 
-        const savedData = plugin.data.entityIdToLocation as
-            | string
-            | undefined;
+        const raw = plugin.data?.[DATA_KEY];
+        if (!raw || typeof raw !== "object") return;
 
-        this.plugin.log(`Saved data: ${savedData}`);
+        for (const [key, value] of Object.entries(raw)) {
+            if (!Array.isArray(value) || value.length !== 16) continue;
 
-        this.entityIdToLocation = savedData
-            ? this.jsonToMap(savedData)
-            : new Map<number, Matrix>();
+            const entityId = Number(key);
+            if (!Number.isFinite(entityId)) continue;
+
+            try {
+                this.entityIdToLocation.set(
+                    entityId,
+                    Matrix.FromArray(value)
+                );
+            } catch {
+                // ignore invalid entries
+            }
+        }
     }
 
     public handleDeath(entityId: number): Matrix | undefined {
-        this.plugin.log(
-            `handleDeath - entity #${entityId} has been recorded for respawn timings`
-        );
-
         this.entityIdList.add(entityId);
         return this.entityIdToLocation.get(entityId);
     }
@@ -38,32 +41,16 @@ export default class NPCRespawnTracker {
 
         this.entityIdToLocation.set(entityId, matrix);
 
-        const json = this.mapToJson();
-        this.plugin.log(`Updating saved data`);
-        this.plugin.data.entityIdToLocation = json;
+        const data: Record<string, number[]> =
+            typeof this.plugin.data?.[DATA_KEY] === "object"
+                ? { ...this.plugin.data[DATA_KEY] }
+                : {};
 
-        this.plugin.log(`Entity #${entityId} respawned at: ${matrix}`);
+        data[String(entityId)] = matrix.m.slice();
+        this.plugin.data[DATA_KEY] = data;
     }
 
-    private mapToJson(): string {
-        const obj: PersistedData = {};
-
-        for (const [key, matrix] of this.entityIdToLocation.entries()) {
-            obj[key] = matrix.m.slice();
-        }
-
-        return JSON.stringify(obj);
-    }
-
-    private jsonToMap(json: string): Map<number, Matrix> {
-        const parsed = JSON.parse(json) as PersistedData;
-        const map = new Map<number, Matrix>();
-
-        for (const key in parsed) {
-            const mat = Matrix.FromArray(parsed[key]);
-            map.set(Number(key), mat);
-        }
-
-        return map;
+    public has(entityId: number): boolean {
+        return this.entityIdToLocation.has(entityId);
     }
 }
