@@ -83,8 +83,6 @@ export default class ResourceTimerPlugin extends Plugin {
         return Math.max(0, entity?._def?._respawnTicks - 1) * 600;
     }
 
-    /* ---------- settings adapters ---------- */
-
     private getPieSettings() {
         return {
             radius: { value: Number(this.settings.radius?.value) },
@@ -104,8 +102,6 @@ export default class ResourceTimerPlugin extends Plugin {
             }
         };
     }
-
-    /* -------------------------------------- */
 
     start(): void {
         this.log(this.pluginName + " started");
@@ -128,55 +124,36 @@ export default class ResourceTimerPlugin extends Plugin {
     }
 
     SocketManager_handleEntityExhaustedResourcesPacket(e: any) {
-        const worldEntityManager =
-            this.gameHooks?.WorldEntityManager?.Instance;
-        const worldEntity = worldEntityManager.getWorldEntityById(e[0]);
-        const respawnTime = this.getRespawnMillis(worldEntity);
+        const wem = this.gameHooks?.WorldEntityManager?.Instance;
+        const entity = wem.getWorldEntityById(e[0]);
+        const respawnTime = this.getRespawnMillis(entity);
 
-        if (worldEntity?._type && respawnTime) {
-            const name = worldEntity._name;
-            const id = worldEntity._entityTypeId;
-            const entityMesh = worldEntity?._appearance?._bjsMeshes[0];
+        if (!entity?._type || !respawnTime) return;
 
-            if (!entityMesh) {
-                this.error(
-                    `No mesh found for '${name + id}'; not adding overlay`
-                );
-                return;
-            }
+        const name = entity._name;
+        const id = entity._entityTypeId;
+        const mesh = entity?._appearance?._bjsMeshes[0];
+        if (!mesh) return;
 
-            let pie: SVGElement;
-            try {
-                pie = createPie(
-                    this.getPieSettings(),
-                    respawnTime,
-                    () => this.overlayTracker.remove(name, id)
-                );
-                this.timersContainer?.appendChild(pie);
-            } catch (error) {
-                this.error(error);
-                return;
-            }
+        const pie = createPie(
+            this.getPieSettings(),
+            respawnTime,
+            () => this.overlayTracker.remove(name, id)
+        );
 
-            this.overlayTracker.add(
-                name,
-                id,
-                pie,
-                entityMesh.getWorldMatrix()
-            );
-        }
+        this.timersContainer?.appendChild(pie);
+        this.overlayTracker.add(name, id, pie, mesh.getWorldMatrix());
     }
 
     SocketManager_handleHitpointsCurrentLevelChangedPacket(e: any) {
-        const entityManager = this.gameHooks?.EntityManager?.Instance;
-        const [entityType, entityId, health] = e;
+        const [type, entityId, health] = e;
+        if (type !== 2 || health !== 0) return;
 
-        if (entityType !== 2) return;
+        const em = this.gameHooks?.EntityManager?.Instance;
+        const entity = em.getNPCByEntityId(entityId);
+        if (!entity) return;
 
-        const entity = entityManager.getNPCByEntityId(entityId);
-        const name = entity?._name;
-
-        if (!entity || health !== 0) return;
+        const name = entity._name;
 
         const timeoutId = window.setTimeout(() => {
             this.timeouts.delete(timeoutId);
@@ -187,17 +164,11 @@ export default class ResourceTimerPlugin extends Plugin {
             const matrix = this.respawnTracker.handleDeath(entityId);
             if (!matrix) return;
 
-            let timer: HTMLElement;
-            try {
-                timer = createTimer(
-                    this.getTimerSettings(),
-                    respawnTime,
-                    () => this.overlayTracker.remove(name, entityId)
-                );
-            } catch (error) {
-                this.log(error);
-                return;
-            }
+            const timer = createTimer(
+                this.getTimerSettings(),
+                respawnTime,
+                () => this.overlayTracker.remove(name, entityId)
+            );
 
             this.timersContainer?.appendChild(timer);
             this.overlayTracker.add(name, entityId, timer, matrix);
@@ -207,27 +178,20 @@ export default class ResourceTimerPlugin extends Plugin {
     }
 
     SocketManager_handleNPCEnteredChunkPacket(e: any) {
-        const entityManager = this.gameHooks?.EntityManager?.Instance;
         const entityId = e[0];
+        const em = this.gameHooks?.EntityManager?.Instance;
 
         const timeoutId = window.setTimeout(() => {
             this.timeouts.delete(timeoutId);
 
-            const entity = entityManager.getNPCByEntityId(entityId);
-            const name = entity?._name;
-            const billboardMesh: Mesh =
-                entity?._appearance?._billboardMesh;
+            const entity = em.getNPCByEntityId(entityId);
+            const mesh = entity?._appearance?._billboardMesh;
+            if (!mesh) return;
 
-            if (!billboardMesh) {
-                this.error(`No mesh found for '${name + entityId}'`);
-                return;
-            }
-
-            const matrixCopy = billboardMesh
-                .getWorldMatrix()
-                .clone();
-
-            this.respawnTracker.handleRespawn(entityId, matrixCopy);
+            this.respawnTracker.handleRespawn(
+                entityId,
+                mesh.getWorldMatrix().clone()
+            );
         }, 50);
 
         this.timeouts.add(timeoutId);
@@ -237,8 +201,8 @@ export default class ResourceTimerPlugin extends Plugin {
         return px / 16;
     }
 
-    private updateElementPosition(matrix: Matrix, domElement: any): void {
-        const translationCoordinates = Vector3.Project(
+    private updateElementPosition(matrix: Matrix, el: any): void {
+        const screen = Vector3.Project(
             Vector3.ZeroReadOnly,
             matrix,
             this.gameHooks.GameEngine.Instance.Scene.getTransformMatrix(),
@@ -248,11 +212,9 @@ export default class ResourceTimerPlugin extends Plugin {
             )
         );
 
-        domElement.style.transform = `translate3d(
-            calc(${this.pxToRem(translationCoordinates.x)}rem - 50%),
-            calc(${this.pxToRem(
-            translationCoordinates.y - 30
-        )}rem - 50%),
+        el.style.transform = `translate3d(
+            calc(${this.pxToRem(screen.x)}rem - 50%),
+            calc(${this.pxToRem(screen.y - 30)}rem - 50%),
             0px
         )`;
     }
@@ -274,6 +236,10 @@ export default class ResourceTimerPlugin extends Plugin {
             clearTimeout(id);
         }
         this.timeouts.clear();
+
+        this.overlayTracker.forEach(item => {
+            item.element.remove();
+        });
 
         if (this.timersContainer) {
             this.timersContainer.remove();
