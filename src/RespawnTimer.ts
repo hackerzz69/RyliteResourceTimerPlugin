@@ -1,38 +1,55 @@
-export default function createTimer(settings: any, durationMillis: number, onEndCallback: Function): HTMLElement {
-        const start = Date.now();
-        const end = start + durationMillis;
+type TimerSettings = {
+    borderColor?: { value?: string };
+    fillColor?: { value?: string };
+    respawnTimerFontSize?: { value?: number };
+};
 
-        const container = document.createElement("div");
-        container.style.borderRadius = "100%";
-        container.style.border = "1px solid " + settings?.borderColor?.value?.toString();
-        container.style.position = "absolute";
-        container.style.minWidth = "0";
-        container.style.display = "flex";
-        container.style.alignItems = "center";
-        container.style.justifyContent = "center";
-        container.style.color = settings?.fillColor?.value?.toString();
-        container.style.fontSize = settings?.respawnTimerFontSize?.value?.toString();
-        container.style.fontFamily = "Courier New, Inter";
-        container.style.fontWeight = "bold";
-        container.style.aspectRatio = "1 / 1";
-        container.style.padding = "6px";
+export default function createTimer(
+    settings: TimerSettings,
+    durationMillis: number,
+    onEndCallback: () => void
+): HTMLElement {
+    const start = Date.now();
+    const end = start + durationMillis;
 
-        const timer = document.createElement("span");
-        container.appendChild(timer);
+    const container = document.createElement("div");
+    container.style.borderRadius = "100%";
+    container.style.border = `1px solid ${settings?.borderColor?.value ?? ""}`;
+    container.style.position = "absolute";
+    container.style.minWidth = "0";
+    container.style.display = "flex";
+    container.style.alignItems = "center";
+    container.style.justifyContent = "center";
+    container.style.color = settings?.fillColor?.value ?? "";
+    container.style.fontSize = `${
+        settings?.respawnTimerFontSize?.value ?? 14
+    }px`;
+    container.style.fontFamily = "Courier New, Inter";
+    container.style.fontWeight = "bold";
+    container.style.aspectRatio = "1 / 1";
+    container.style.padding = "6px";
+    container.style.pointerEvents = "none";
 
-        const tick = (now: number) => {
-            const remainingMs = end - Date.now(); // ignore 'now' if you prefer
-            const remaining = Math.max(0, Math.round((remainingMs / 1000) * 10) / 10);
-            timer.innerHTML = remaining.toFixed(1);
+    const timer = document.createElement("span");
+    container.appendChild(timer);
 
-            if (remaining > 0) {
-                requestAnimationFrame(tick);
-            } else {
-                container.remove();
-                onEndCallback();
-            }
-        };
+    const tick = () => {
+        const remainingMs = end - Date.now();
+        const remaining = Math.max(
+            0,
+            Math.round((remainingMs / 1000) * 10) / 10
+        );
 
-        requestAnimationFrame(tick);
-        return container;
-    }
+        timer.textContent = remaining.toFixed(1);
+
+        if (remaining > 0) {
+            requestAnimationFrame(tick);
+        } else {
+            container.remove();
+            onEndCallback();
+        }
+    };
+
+    requestAnimationFrame(tick);
+    return container;
+}

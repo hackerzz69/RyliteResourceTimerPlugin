@@ -1,9 +1,9 @@
 import { Plugin, SettingsTypes, UIManager, UIManagerScope } from "@ryelite/core";
-import { Matrix, Vector3 } from '@babylonjs/core/Maths/math.js';
+import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.js";
 import { Mesh, Nullable, Vector4 } from "@babylonjs/core";
-import createPie from './Pie';
-import createTimer from './RespawnTimer';
-import NPCRespawnTracker from './NPCRespawnTracker'
+import createPie from "./Pie";
+import createTimer from "./RespawnTimer";
+import NPCRespawnTracker from "./NPCRespawnTracker";
 import OverlayTracker from "./OverlayTracker";
 
 export default class ResourceTimerPlugin extends Plugin {
@@ -18,8 +18,8 @@ export default class ResourceTimerPlugin extends Plugin {
         super();
 
         this.settings.radius = {
-            text: 'Radius',
-            description: 'The radius of the timer circle',
+            text: "Radius",
+            description: "The radius of the timer circle",
             type: SettingsTypes.range,
             min: 0,
             max: 100,
@@ -28,8 +28,9 @@ export default class ResourceTimerPlugin extends Plugin {
         };
 
         this.settings.borderRatio = {
-            text: 'Border ratio',
-            description: 'The ratio between circle radius and the width of the border. Bigger number = smaller border proportionally',
+            text: "Border ratio",
+            description:
+                "The ratio between circle radius and the width of the border. Bigger number = smaller border proportionally",
             type: SettingsTypes.range,
             min: 0,
             max: 100,
@@ -38,22 +39,23 @@ export default class ResourceTimerPlugin extends Plugin {
         };
 
         this.settings.fillColor = {
-            text: 'Timer/pie color',
+            text: "Timer/pie color",
             type: SettingsTypes.color,
             value: "#FFD800",
             callback: () => {}
         };
 
         this.settings.borderColor = {
-            text: 'Border color',
+            text: "Border color",
             type: SettingsTypes.color,
             value: "#FF6A00",
             callback: () => {}
         };
 
         this.settings.opacity = {
-            text: 'Opacity',
-            description: 'How transparent the timers are. 0 = transparent, 1 = opaque',
+            text: "Opacity",
+            description:
+                "How transparent the timers are. 0 = transparent, 1 = opaque",
             type: SettingsTypes.range,
             min: 0,
             max: 1,
@@ -62,7 +64,7 @@ export default class ResourceTimerPlugin extends Plugin {
         };
 
         this.settings.respawnTimerFontSize = {
-            text: 'Respawn timer font size',
+            text: "Respawn timer font size",
             type: SettingsTypes.range,
             min: 0,
             max: 100,
@@ -72,86 +74,110 @@ export default class ResourceTimerPlugin extends Plugin {
     }
 
     private getRespawnMillis(entity: any) {
-        return Math.max(0, entity?._def?._respawnTicks - 1) * 600; // 600ms tickrate; using -1 from reported tickrate as this is what is seen in practise (??)
+        return Math.max(0, entity?._def?._respawnTicks - 1) * 600;
     }
 
-    init(): void {
-    }
+    init(): void {}
 
     start(): void {
         this.log(this.pluginName + " started");
 
-        this.timersContainer = this.uiManager.createElement(UIManagerScope.ClientRelative) as HTMLDivElement;
+        this.timersContainer = this.uiManager.createElement(
+            UIManagerScope.ClientRelative
+        ) as HTMLDivElement;
+
         if (this.timersContainer) {
-            this.timersContainer.id = 'resource-timers';
-            this.timersContainer.style.position = 'absolute';
-            this.timersContainer.style.pointerEvents = 'none';
-            this.timersContainer.style.zIndex = '1';
-            this.timersContainer.style.overflow = 'hidden';
-            this.timersContainer.style.width = '100%';
+            this.timersContainer.id = "resource-timers";
+            this.timersContainer.style.position = "absolute";
+            this.timersContainer.style.pointerEvents = "none";
+            this.timersContainer.style.zIndex = "1";
+            this.timersContainer.style.overflow = "hidden";
+            this.timersContainer.style.width = "100%";
             this.timersContainer.style.height =
-                'calc(100% - var(--titlebar-height))'; // Account for titlebar height
-            this.timersContainer.style.top = 'var(--titlebar-height)'; // Position below titlebar
+                "calc(100% - var(--titlebar-height))";
+            this.timersContainer.style.top = "var(--titlebar-height)";
         }
     }
 
     SocketManager_handleEntityExhaustedResourcesPacket(e: any) {
-        const worldEntityManager = this.gameHooks?.WorldEntityManager?.Instance;
+        const worldEntityManager =
+            this.gameHooks?.WorldEntityManager?.Instance;
         let worldEntity = worldEntityManager.getWorldEntityById(e[0]);
         let respawnTime = this.getRespawnMillis(worldEntity);
-        
-        if (worldEntity?._type && respawnTime) {
-            //this.log(`Resource exhausted:`);
-            //this.log(worldEntity);
 
+        if (worldEntity?._type && respawnTime) {
             let name = worldEntity._name;
             let id = worldEntity._entityTypeId;
             let entityMesh = worldEntity?._appearance?._bjsMeshes[0];
-            
+
             if (!entityMesh) {
-                this.error(`No mesh found for '${name+id}'; not adding overlay`);
+                this.error(
+                    `No mesh found for '${name + id}'; not adding overlay`
+                );
                 return;
             }
 
             let pie: SVGElement;
             try {
-                pie = createPie(this.settings, respawnTime, () => this.overlayTracker.remove(name, id));
+                pie = createPie(this.settings, respawnTime, () =>
+                    this.overlayTracker.remove(name, id)
+                );
                 this.timersContainer?.appendChild(pie);
             } catch (error) {
                 this.error(error);
                 return;
             }
-            
-            this.overlayTracker.add(name, id, pie, entityMesh.getWorldMatrix());
+
+            this.overlayTracker.add(
+                name,
+                id,
+                pie,
+                entityMesh.getWorldMatrix()
+            );
         }
     }
 
     SocketManager_handleHitpointsCurrentLevelChangedPacket(e: any) {
         const entityManager = this.gameHooks?.EntityManager?.Instance;
-        // entityType (NPC/Player), entityID, health
-        let [ entityType, entityId, health ] = e;
-        if (entityType === 2) { // NPC
+        let [entityType, entityId, health] = e;
+
+        if (entityType === 2) {
             let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
+
             if (entity && health === 0) {
                 setTimeout(() => {
-                    let respawnTime = (entity?._def?._combat?._respawnLength * 600); // 600ms ticks
-                    //this.log(`Entity '${name}' #${entityId} died (${respawnTime}ms respawn):`);
-                    //this.log(entity);
-                    //this.log(entity?._appearance?._billboardMesh?.getWorldMatrix().toString())
-                    let matrix = this.respawnTracker.handleDeath(entityId);
+                    let respawnTime =
+                        entity?._def?._combat?._respawnLength * 600;
+                    let matrix =
+                        this.respawnTracker.handleDeath(entityId);
+
                     if (matrix) {
                         let timer: HTMLElement;
                         try {
-                            timer = createTimer(this.settings, respawnTime, () => this.overlayTracker.remove(name, entityId));
+                            timer = createTimer(
+                                this.settings,
+                                respawnTime,
+                                () =>
+                                    this.overlayTracker.remove(
+                                        name,
+                                        entityId
+                                    )
+                            );
                         } catch (error) {
                             this.log(error);
                             return;
                         }
+
                         this.timersContainer?.appendChild(timer);
-                        this.overlayTracker.add(name, entityId, timer, matrix);
+                        this.overlayTracker.add(
+                            name,
+                            entityId,
+                            timer,
+                            matrix
+                        );
                     }
-                }, 1200); // 2x600ms ticks before despawn
+                }, 1200);
             }
         }
     }
@@ -159,29 +185,28 @@ export default class ResourceTimerPlugin extends Plugin {
     SocketManager_handleNPCEnteredChunkPacket(e: any) {
         const entityManager = this.gameHooks?.EntityManager?.Instance;
         let entityId = e[0];
+
         setTimeout(() => {
             let entity = entityManager.getNPCByEntityId(entityId);
             let name = entity._name;
+            let billboardMesh: Mesh =
+                entity?._appearance?._billboardMesh;
 
-            //this.log("NPC entered chunk:")
-            //this.log(entity);
-
-            let billboardMesh: Mesh = entity?._appearance?._billboardMesh;
             if (!billboardMesh) {
-                this.error(`No mesh found for '${name+entityId}'`);
+                this.error(`No mesh found for '${name + entityId}'`);
                 return;
             }
-            let matrixCopy: Matrix = billboardMesh.getWorldMatrix().clone();
-            //this.log(matrixCopy.toString());
+
+            let matrixCopy: Matrix =
+                billboardMesh.getWorldMatrix().clone();
             this.respawnTracker.handleRespawn(entityId, matrixCopy);
         }, 50);
     }
 
-    // Borrowed from Nameplates - https://github.com/RyeL1te/Plugins/blob/main/Nameplates/src/Nameplates.ts#L1286
     private pxToRem(px: number): number {
         return px / 16;
     }
-    
+
     private updateElementPosition(matrix: Matrix, domElement: any): void {
         const translationCoordinates = Vector3.Project(
             Vector3.ZeroReadOnly,
@@ -193,7 +218,11 @@ export default class ResourceTimerPlugin extends Plugin {
             )
         );
 
-        domElement.style.transform = `translate3d(calc(${this.pxToRem(translationCoordinates.x)}rem - 50%), calc(${this.pxToRem(translationCoordinates.y - 30)}rem - 50%), 0px)`;
+        domElement.style.transform = `translate3d(calc(${this.pxToRem(
+            translationCoordinates.x
+        )}rem - 50%), calc(${this.pxToRem(
+            translationCoordinates.y - 30
+        )}rem - 50%), 0px)`;
     }
 
     GameLoop_draw() {
