@@ -7,6 +7,8 @@ import NPCRespawnTracker from "./NPCRespawnTracker";
 import OverlayTracker from "./OverlayTracker";
 
 const STACK_DISTANCE_PX = 18;
+const FADE_START_DISTANCE = 25;
+const FADE_END_DISTANCE = 75;
 
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
@@ -213,9 +215,16 @@ export default class ResourceTimerPlugin extends Plugin {
         const projected: {
             item: any;
             screenY: number;
+            distance: number;
         }[] = [];
 
         this.overlayTracker.forEach(item => {
+            const worldPos = item.matrix.getTranslation();
+            const distance = Vector3.Distance(
+                camera.position,
+                worldPos
+            );
+
             const screen = Vector3.Project(
                 Vector3.ZeroReadOnly,
                 item.matrix,
@@ -226,7 +235,11 @@ export default class ResourceTimerPlugin extends Plugin {
                 )
             );
 
-            projected.push({ item, screenY: screen.y });
+            projected.push({
+                item,
+                screenY: screen.y,
+                distance
+            });
         });
 
         projected.sort((a, b) => a.screenY - b.screenY);
@@ -243,6 +256,20 @@ export default class ResourceTimerPlugin extends Plugin {
 
             const offset = stackIndex * STACK_DISTANCE_PX;
             lastY = entry.screenY;
+
+            let fade = 1;
+            if (entry.distance > FADE_START_DISTANCE) {
+                fade =
+                    1 -
+                    (entry.distance - FADE_START_DISTANCE) /
+                    (FADE_END_DISTANCE - FADE_START_DISTANCE);
+                fade = Math.max(0, Math.min(1, fade));
+            }
+
+            const baseOpacity = Number(this.settings.opacity?.value ?? 1);
+            entry.item.element.style.opacity = String(
+                fade * baseOpacity
+            );
 
             const screen = Vector3.Project(
                 Vector3.ZeroReadOnly,
