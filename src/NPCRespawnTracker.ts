@@ -1,7 +1,9 @@
 import { Matrix } from "@babylonjs/core";
 import { Plugin } from "@ryelite/core";
 
-const DATA_KEY = "entityIdToLocation";
+const STORAGE_KEY = "resourceTimers.respawnLocations";
+
+type StoredRespawns = Record<string, unknown>;
 
 export default class NPCRespawnTracker {
     private entityIdList = new Set<number>();
@@ -10,24 +12,62 @@ export default class NPCRespawnTracker {
 
     constructor(plugin: Plugin) {
         this.plugin = plugin;
+        this.load();
+    }
 
-        const raw = plugin.data?.[DATA_KEY];
-        if (!raw || typeof raw !== "object") return;
+    private load(): void {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
 
-        for (const [key, value] of Object.entries(raw)) {
-            if (!Array.isArray(value) || value.length !== 16) continue;
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            return;
+        }
 
+        if (typeof parsed !== "object" || parsed === null) return;
+
+        for (const [key, value] of Object.entries(parsed as StoredRespawns)) {
             const entityId = Number(key);
             if (!Number.isFinite(entityId)) continue;
+
+            let arr: number[];
+
+            if (Array.isArray(value)) {
+                arr = value;
+            } else if (typeof value === "object" && value !== null) {
+                arr = Object.values(value as Record<string, number>);
+            } else {
+                continue;
+            }
+
+            if (arr.length !== 16 || !arr.every(n => typeof n === "number")) {
+                continue;
+            }
 
             try {
                 this.entityIdToLocation.set(
                     entityId,
-                    Matrix.FromArray(value)
+                    Matrix.FromArray(arr)
                 );
             } catch {
-                // ignore invalid entries
+                // ignore malformed entries
             }
+        }
+    }
+
+    private save(): void {
+        const data: Record<string, number[]> = {};
+
+        for (const [id, matrix] of this.entityIdToLocation) {
+            data[String(id)] = matrix.m.slice();
+        }
+
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch {
+            // ignore storage failures
         }
     }
 
@@ -40,14 +80,7 @@ export default class NPCRespawnTracker {
         if (!this.entityIdList.has(entityId)) return;
 
         this.entityIdToLocation.set(entityId, matrix);
-
-        const data: Record<string, number[]> =
-            typeof this.plugin.data?.[DATA_KEY] === "object"
-                ? { ...this.plugin.data[DATA_KEY] }
-                : {};
-
-        data[String(entityId)] = matrix.m.slice();
-        this.plugin.data[DATA_KEY] = data;
+        this.save();
     }
 
     public has(entityId: number): boolean {
