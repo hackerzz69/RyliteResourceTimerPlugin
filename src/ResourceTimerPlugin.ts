@@ -6,6 +6,8 @@ import createTimer from "./RespawnTimer";
 import NPCRespawnTracker from "./NPCRespawnTracker";
 import OverlayTracker from "./OverlayTracker";
 
+const STACK_DISTANCE_PX = 18;
+
 export default class ResourceTimerPlugin extends Plugin {
     pluginName = "Resource Timers";
     author: string = "Grandy";
@@ -14,7 +16,7 @@ export default class ResourceTimerPlugin extends Plugin {
     timersContainer: HTMLDivElement | null = null;
 
     respawnTracker = new NPCRespawnTracker(this);
-    overlayTracker = new OverlayTracker(this);
+    overlayTracker = new OverlayTracker();
 
     private timeouts = new Set<number>();
 
@@ -201,32 +203,63 @@ export default class ResourceTimerPlugin extends Plugin {
         return px / 16;
     }
 
-    private updateElementPosition(matrix: Matrix, el: any): void {
-        const screen = Vector3.Project(
-            Vector3.ZeroReadOnly,
-            matrix,
-            this.gameHooks.GameEngine.Instance.Scene.getTransformMatrix(),
-            this.gameHooks.GameCameraManager.Camera.viewport.toGlobal(
-                this.gameHooks.GameEngine.Instance.Engine.getRenderWidth(1),
-                this.gameHooks.GameEngine.Instance.Engine.getRenderHeight(1)
-            )
-        );
-
-        el.style.transform = `translate3d(
-            calc(${this.pxToRem(screen.x)}rem - 50%),
-            calc(${this.pxToRem(screen.y - 30)}rem - 50%),
-            0px
-        )`;
-    }
-
     GameLoop_draw() {
         if (this.overlayTracker.isEmpty()) return;
 
+        const camera = this.gameHooks.GameCameraManager.Camera;
+        const engine = this.gameHooks.GameEngine.Instance.Engine;
+        const scene = this.gameHooks.GameEngine.Instance.Scene;
+
+        const projected: {
+            item: any;
+            screenY: number;
+        }[] = [];
+
         this.overlayTracker.forEach(item => {
-            if (item.matrix) {
-                this.updateElementPosition(item.matrix, item.element);
-            }
+            const screen = Vector3.Project(
+                Vector3.ZeroReadOnly,
+                item.matrix,
+                scene.getTransformMatrix(),
+                camera.viewport.toGlobal(
+                    engine.getRenderWidth(1),
+                    engine.getRenderHeight(1)
+                )
+            );
+
+            projected.push({ item, screenY: screen.y });
         });
+
+        projected.sort((a, b) => a.screenY - b.screenY);
+
+        let lastY = -Infinity;
+        let stackIndex = 0;
+
+        for (const entry of projected) {
+            if (Math.abs(entry.screenY - lastY) < STACK_DISTANCE_PX) {
+                stackIndex++;
+            } else {
+                stackIndex = 0;
+            }
+
+            const offset = stackIndex * STACK_DISTANCE_PX;
+            lastY = entry.screenY;
+
+            const screen = Vector3.Project(
+                Vector3.ZeroReadOnly,
+                entry.item.matrix,
+                scene.getTransformMatrix(),
+                camera.viewport.toGlobal(
+                    engine.getRenderWidth(1),
+                    engine.getRenderHeight(1)
+                )
+            );
+
+            entry.item.element.style.transform = `translate3d(
+                calc(${this.pxToRem(screen.x)}rem - 50%),
+                calc(${this.pxToRem(screen.y - 30 - offset)}rem - 50%),
+                0px
+            )`;
+        }
     }
 
     stop(): void {

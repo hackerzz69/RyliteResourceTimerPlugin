@@ -1,16 +1,12 @@
 import { Matrix } from "@babylonjs/core";
-import { Plugin } from "@ryelite/core";
 
 class PositionedElement {
-    public readonly key: string;
-    public readonly element: HTMLElement | SVGElement;
-    public readonly matrix: Matrix;
+    key: string;
+    element: SVGElement | HTMLElement;
+    matrix: Matrix;
+    stackOffset = 0;
 
-    constructor(
-        key: string,
-        element: HTMLElement | SVGElement,
-        matrix: Matrix
-    ) {
+    constructor(key: string, element: SVGElement | HTMLElement, matrix: Matrix) {
         this.key = key;
         this.element = element;
         this.matrix = matrix;
@@ -23,11 +19,6 @@ class PositionedElement {
 
 export default class OverlayTracker {
     private items: PositionedElement[] = [];
-    private plugin: Plugin;
-
-    constructor(plugin: Plugin) {
-        this.plugin = plugin;
-    }
 
     add(
         name: string,
@@ -36,30 +27,23 @@ export default class OverlayTracker {
         matrix: Matrix
     ): void {
         const key = PositionedElement.createKey(name, id);
-        this.plugin.log(
-            `OverlayTracker - adding ${key} / ${matrix.toString()}`
-        );
-
         this.items.push(new PositionedElement(key, element, matrix));
     }
 
-    indexOf(entityName: string, entityId: number): number {
-        const key = PositionedElement.createKey(entityName, entityId);
-        return this.items.findIndex(item => item.key === key);
-    }
-
-    remove(entityName: string, entityId: number): boolean {
-        const index = this.indexOf(entityName, entityId);
+    remove(name: string, id: number): boolean {
+        const key = PositionedElement.createKey(name, id);
+        const index = this.items.findIndex(i => i.key === key);
         if (index === -1) return false;
-
         this.items.splice(index, 1);
         return true;
     }
 
-    forEach(callback: (item: PositionedElement) => void): void {
-        for (const item of this.items) {
-            callback(item);
-        }
+    forEach(cb: (item: PositionedElement) => void): void {
+        for (const item of this.items) cb(item);
+    }
+
+    values(): PositionedElement[] {
+        return this.items;
     }
 
     isEmpty(): boolean {
