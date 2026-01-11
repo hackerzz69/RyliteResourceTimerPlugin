@@ -6,8 +6,8 @@ const STORAGE_KEY = "resourceTimers.respawnLocations";
 type StoredRespawns = Record<string, unknown>;
 
 export default class NPCRespawnTracker {
-    private entityIdList = new Set<number>();
-    private entityIdToLocation = new Map<number, Matrix>();
+    private seenDeaths = new Set<number>();
+    private respawnLocations = new Map<number, Matrix>();
     private plugin: Plugin;
 
     constructor(plugin: Plugin) {
@@ -47,7 +47,7 @@ export default class NPCRespawnTracker {
             }
 
             try {
-                this.entityIdToLocation.set(
+                this.respawnLocations.set(
                     entityId,
                     Matrix.FromArray(arr)
                 );
@@ -60,7 +60,7 @@ export default class NPCRespawnTracker {
     private save(): void {
         const data: Record<string, number[]> = {};
 
-        for (const [id, matrix] of this.entityIdToLocation) {
+        for (const [id, matrix] of this.respawnLocations) {
             data[String(id)] = matrix.m.slice();
         }
 
@@ -72,18 +72,29 @@ export default class NPCRespawnTracker {
     }
 
     public handleDeath(entityId: number): Matrix | undefined {
-        this.entityIdList.add(entityId);
-        return this.entityIdToLocation.get(entityId);
+        this.seenDeaths.add(entityId);
+        return this.respawnLocations.get(entityId);
     }
 
     public handleRespawn(entityId: number, matrix: Matrix): void {
-        if (!this.entityIdList.has(entityId)) return;
+        if (!this.seenDeaths.has(entityId)) return;
 
-        this.entityIdToLocation.set(entityId, matrix);
+        this.respawnLocations.set(entityId, matrix);
         this.save();
     }
 
     public has(entityId: number): boolean {
-        return this.entityIdToLocation.has(entityId);
+        return this.respawnLocations.has(entityId);
+    }
+
+    public reset(): void {
+        this.seenDeaths.clear();
+        this.respawnLocations.clear();
+
+        try {
+            localStorage.removeItem(STORAGE_KEY);
+        } catch {
+            // ignore storage failures
+        }
     }
 }

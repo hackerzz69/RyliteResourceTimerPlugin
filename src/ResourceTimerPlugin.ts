@@ -79,6 +79,17 @@ export default class ResourceTimerPlugin extends Plugin {
             value: 14,
             callback: () => {}
         };
+
+        this.settings.resetRespawnData = {
+            text: "Reset saved respawn locations",
+            description: "Clears all saved NPC respawn locations",
+            type: SettingsTypes.button,
+            value: "",
+            callback: () => {
+                this.respawnTracker.reset();
+            }
+        };
+
     }
 
     init(): void {}
